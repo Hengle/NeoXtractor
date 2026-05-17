@@ -302,8 +302,22 @@ class NPKFile:
         if entry.encrypt_flag != DecryptionType.NONE:
             entry.data = decrypt_entry(entry, self.options.decryption_key)
 
+        # entry.zip_flag == CompressionType.NONE and self.hash_mode == 3:
+        # Special case: ARC4-LZ4 compression
+
+        triedAndFailed = self.hash_mode != 3
+
+        if self.hash_mode == 3 and not triedAndFailed:
+            try:
+                if entry.zip_flag == CompressionType.NONE:
+                    entry.data = self.arc_key.decrypt(entry.data)
+                elif entry.zip_flag == CompressionType.LZ4:
+                    entry.data = decompress_entry(entry)
+            except Exception:
+                triedAndFailed = True
+
         # Decompress if needed
-        if entry.zip_flag != CompressionType.NONE:
+        if entry.zip_flag != CompressionType.NONE and triedAndFailed:
             try:
                 entry.data = decompress_entry(entry)
             except Exception:

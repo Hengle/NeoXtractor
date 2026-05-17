@@ -1,9 +1,21 @@
 """Provides a filter for NPK entries in the NPK file list."""
 
+from enum import IntFlag, auto
+
 from core.npk.class_types import NPKEntryDataFlags
 from core.npk.enums import NPKEntryFileCategories
 from gui.utils.npk import get_npk_file, ransack_agent
 from gui.widgets.npk_file_list import NPKFileList
+
+
+class SortType(IntFlag):
+    """Flags for NPK entry data."""
+
+    NONE = 0
+    ASCENDING = auto()
+    DESCENDING = auto()
+    ASCENDING_FILE_NAME = auto()
+    DESCENDING_FILE_NAME = auto()
 
 
 class NPKEntryFilter:
@@ -18,6 +30,7 @@ class NPKEntryFilter:
         self.include_text = True
         self.include_binary = True
         self.include_slot = True
+        self.sort_type = SortType.NONE
 
         self.mesh_biped_head = False
 
