@@ -38,11 +38,11 @@ class MeshLoader:
         """Initialize the list of available parsers in order of preference."""
         return [
             MeshParser0(),
-            MeshParser1(),
-            MeshParser2(),
-            MeshParser3(),
-            MeshParser4(),
-            MeshParser5(),
+            # MeshParser1(),
+            # MeshParser2(),
+            # MeshParser3(),
+            # MeshParser4(),
+            # MeshParser5(),
         ]
 
     def load_from_bytes(self, data: bytes) -> Optional[MeshData]:

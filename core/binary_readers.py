@@ -21,6 +21,11 @@ def read_uint16(f: BinaryIO) -> int:
     return struct.unpack("H", f.read(2))[0]
 
 
+def read_sint16(f: BinaryIO) -> int:
+    """Extract signed 16-bit integer from binary stream."""
+    return struct.unpack("h", f.read(2))[0]
+
+
 def read_uint8(f: BinaryIO) -> int:
     """Extract unsigned 8-bit integer from binary stream."""
     return struct.unpack("B", f.read(1))[0]

@@ -2,7 +2,7 @@
 
 from core.mesh_loader import MeshData
 
-NAME = "Wavefront OBJ Format"
+NAME = "Wavefront (OBJ) Format"
 EXTENSION = ".obj"
 
 

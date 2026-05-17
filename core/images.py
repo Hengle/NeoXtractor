@@ -127,7 +127,7 @@ def _decode_correct_format(
     return Image.frombytes("RGBA", (width, height), data, "raw", ("BGRA"))
 
 
-# this code was derived from TeaEffTeu's works and he slightly guided me, thank you very much for sharing!!
+# this code was derived from TeaEffTeu's works and guidance, thank you very much for sharing!!
 def compblks_convert(data: bytes) -> Image.Image:
     """Convert CompBlks to Image."""
 

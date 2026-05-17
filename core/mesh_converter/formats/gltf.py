@@ -6,7 +6,7 @@ import struct
 
 from core.mesh_loader import MeshData
 
-NAME = "glTF 2.0 Format"
+NAME = "glTF 2.0 (GLTF) Format"
 EXTENSION = ".gltf"
 
 

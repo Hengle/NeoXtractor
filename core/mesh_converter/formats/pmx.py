@@ -23,10 +23,9 @@ def convert(mesh: MeshData) -> bytes:
     - bytes: PMX file content as bytes
     """
     pmx_model = pmx.Model()
-    pmx_model.display_slots.append(pmx.DisplaySlot("表情", "Exp", 1, None))
-    pmx_model.english_name = "Empty model"
-    pmx_model.comment = "NeoX Model Converterで生成"
-    pmx_model.english_comment = "Created by NeoX Model Converter."
+    pmx_model.display_slots.append(pmx.DisplaySlot("Expression", "Exp", 1, None))
+    pmx_model.name = "ExportedMesh_NeoXtractor"
+    pmx_model.comment = "Created by NeoXtractor"
 
     # Build bone hierarchy if bones exist
     if mesh.has_bone_structure:
@@ -145,53 +144,29 @@ def convert(mesh: MeshData) -> bytes:
     for face in mesh.face:
         pmx_model.indices.extend(face)
 
-    # Create materials based on mesh data or default
-    if mesh.mesh:
-        for i, (_mesh_vertex_count, mesh_face_count, _, _) in enumerate(mesh.mesh):
-            material = pmx.Material(
-                name=f"Mat{i}",
-                english_name=f"material{i}",
-                diffuse_color=common.RGB(1, 1, 1),
-                alpha=1.0,
-                specular_factor=1,
-                specular_color=common.RGB(1, 1, 1),
-                ambient_color=common.RGB(0, 0, 0),
-                flag=0,
-                edge_color=common.RGBA(0, 0, 0, 1),
-                edge_size=0,
-                texture_index=-1,
-                sphere_texture_index=-1,
-                sphere_mode=pmx.MATERIALSPHERE_NONE,
-                toon_sharing_flag=1,
-                toon_texture_index=0,
-                comment="Auto-Generated Material",
-                vertex_count=mesh_face_count * 3,
-            )
-            pmx_model.materials.append(material)
-    else:
-        # Default single material
-        material = pmx.Material(
-            name="Material",
-            english_name="Material",
-            diffuse_color=common.RGB(1, 1, 1),
-            alpha=1.0,
-            specular_factor=1,
-            specular_color=common.RGB(1, 1, 1),
-            ambient_color=common.RGB(0, 0, 0),
-            flag=0,
-            edge_color=common.RGBA(0, 0, 0, 1),
-            edge_size=0,
-            texture_index=-1,
-            sphere_texture_index=-1,
-            sphere_mode=pmx.MATERIALSPHERE_NONE,
-            toon_sharing_flag=1,
-            toon_texture_index=0,
-            comment="Auto-Generated Material",
-            vertex_count=len(mesh.face) * 3,
-        )
-        pmx_model.materials.append(material)
+    # Default single material
+    material = pmx.Material(
+        name="Material",
+        english_name="Material",
+        diffuse_color=common.RGB(1, 1, 1),
+        alpha=1.0,
+        specular_factor=1,
+        specular_color=common.RGB(1, 1, 1),
+        ambient_color=common.RGB(0, 0, 0),
+        flag=0,
+        edge_color=common.RGBA(0, 0, 0, 1),
+        edge_size=0,
+        texture_index=-1,
+        sphere_texture_index=-1,
+        sphere_mode=pmx.MATERIALSPHERE_NONE,
+        toon_sharing_flag=1,
+        toon_texture_index=0,
+        comment="Auto-Generated Material",
+        vertex_count=len(mesh.face) * 3,
+    )
+    pmx_model.materials.append(material)
 
     # Write to bytes buffer
     buffer = io.BytesIO()
-    pymeshio.pmx.writer.write(buffer, pmx_model)
+    pymeshio.pmx.writer.write(buffer, pmx_model, 1)
     return buffer.getvalue()

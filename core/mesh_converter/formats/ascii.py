@@ -2,7 +2,7 @@
 
 from core.mesh_loader import MeshData
 
-NAME = "ASCII Mesh Format"
+NAME = "Text Mesh (ASCII) Format"
 EXTENSION = ".ascii"
 
 
