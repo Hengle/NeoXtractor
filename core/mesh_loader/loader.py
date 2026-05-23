@@ -8,11 +8,6 @@ from typing import List, Optional, Union
 from core.logger import get_logger
 from core.mesh_loader.parsers import (
     MeshParser0,
-    MeshParser1,
-    MeshParser2,
-    MeshParser3,
-    MeshParser4,
-    MeshParser5,
 )
 from core.mesh_loader.types import BaseMeshParser, MeshData
 
@@ -36,14 +31,7 @@ class MeshLoader:
 
     def _initialize_parsers(self) -> List[BaseMeshParser]:
         """Initialize the list of available parsers in order of preference."""
-        return [
-            MeshParser0(),
-            # MeshParser1(),
-            # MeshParser2(),
-            # MeshParser3(),
-            # MeshParser4(),
-            # MeshParser5(),
-        ]
+        return [MeshParser0()]
 
     def load_from_bytes(self, data: bytes) -> Optional[MeshData]:
         """

@@ -280,7 +280,7 @@ class MeshParser0(BaseMeshParser):
         if type == 100:
             vertex_float_reader = read_half_float
             get_logger().warning(
-                "MESH: This mesh has a non-standard UV count - UV , vertex_bone and vertex_weights will be missing!"
+                "MESH: This mesh has a non-standard UV count - UV, vertex_bone and vertex_weights will be missing!"
             )
         elif type == -1:
             raise NotImplementedError("MESH: This mesh type is not yet implemented")
@@ -349,5 +349,8 @@ class MeshParser0(BaseMeshParser):
             model["vertex_weight"] = []
             for _ in range(vertex_count):
                 model["vertex_weight"].append([read_float(f) for _ in range(4)])
+        elif model["has_bones"] == 1 or model["has_bones"] == 4 and type == 100:
+            model["vertex_bone"] = []
+            model["vertex_weight"] = []
 
         return model
