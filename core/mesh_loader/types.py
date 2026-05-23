@@ -12,6 +12,42 @@ MAX_BONE_COUNT = 20000
 
 
 @dataclass
+class Mesh:
+    """
+    Represents the mesh part of a full mesh file.
+    """
+
+    vertexes: int = 0
+    faces: int = 0
+    position: list[tuple[float, float, float]] = field(
+        default_factory=list[tuple[float, float, float]]
+    )
+    normal: list[tuple[float, float, float]] = field(
+        default_factory=list[tuple[float, float, float]]
+    )
+    face: list[tuple[int, int, int]] = field(default_factory=list[tuple[int, int, int]])
+    uv: list[tuple[float, float]] = field(default_factory=list[tuple[float, float]])
+
+
+@dataclass
+class Bones:
+    """
+    Represents the bone/skeleton part of a full mesh file.
+    """
+
+    # Bone/skeleton data
+    has_bones: int = 0
+    parent_connections: list[int] = field(default_factory=list[int])
+    names: list[str] = field(default_factory=list[str])
+    matrix: list[np.ndarray] = field(default_factory=list[np.ndarray])
+    count: int = 0
+
+    # Vertex bone assignments
+    vertexes: list[list[int]] = field(default_factory=list[list[int]])
+    weights: list[list[float]] = field(default_factory=list[list[float]])
+
+
+@dataclass
 class MeshData:
     """
     Standardized mesh data structure containing all parsed mesh information.
@@ -22,56 +58,31 @@ class MeshData:
 
     # Metadata
     version: int
+    type: int
+    mesh: Mesh = field(default_factory=Mesh)
+    bones: Bones = field(default_factory=Bones)
 
     # Core mesh geometry
-    position: list[tuple[float, float, float]] = field(default_factory=list)
-    normal: list[tuple[float, float, float]] = field(default_factory=list)
-    face: list[tuple[int, int, int]] = field(default_factory=list)
-    uv: list[tuple[float, float]] = field(default_factory=list)
-
-    # Bone/skeleton data
-    has_bones: int = 0
-    bone_parent: list[int] = field(default_factory=list)
-    bone_name: list[str] = field(default_factory=list)
-    bone_matrix: list[np.ndarray] = field(default_factory=list)
-    bone_count: int = 0
-
-    # Vertex bone assignments
-    vertex_bone: list[list[int]] = field(default_factory=list)
-    vertex_weight: list[list[float]] = field(default_factory=list)
-
-    # Mesh metadata
-    mesh: list[tuple[int, int, int, int]] = field(default_factory=list)
-    mesh_version: int = 0
-
-    # Additional optional data
-    material_id: list[int] = field(default_factory=list)
-    vertex_color: list[tuple[float, float, float, float]] = field(default_factory=list)
 
     @property
     def vertex_count(self) -> int:
         """Get the number of vertices in the mesh."""
-        return len(self.position)
+        return self.mesh.vertexes
 
     @property
     def face_count(self) -> int:
         """Get the number of faces in the mesh."""
-        return len(self.face)
+        return self.mesh.faces
 
     @property
     def has_bone_structure(self) -> bool:
         """Check if the mesh has bone data."""
-        return self.has_bones > 0 and len(self.bone_name) > 0
-
-    @property
-    def has_normals(self) -> bool:
-        """Check if the mesh has normal data."""
-        return len(self.normal) == len(self.position)
+        return self.bones.has_bones == 1 or self.bones.has_bones == 4
 
     @property
     def has_uvs(self) -> bool:
         """Check if the mesh has UV coordinate data."""
-        return len(self.uv) == len(self.position)
+        return len(self.mesh.uv) == len(self.mesh.position)
 
     def validate(self) -> bool:
         """
@@ -80,26 +91,25 @@ class MeshData:
         Returns:
             True if the mesh data is consistent, False otherwise
         """
-        vertex_count = self.vertex_count
 
         # Check that face indices are valid
-        if self.face:
-            max_index = max(max(face) for face in self.face)
-            if max_index >= vertex_count:
+        if self.mesh.face:
+            max_index = max(max(face) for face in self.mesh.face)
+            if max_index >= self.mesh.faces:
                 return False
 
         # Check bone data consistency
-        if self.has_bones:
+        if self.bones.has_bones:
             if (
-                len(self.vertex_bone) != vertex_count
-                or len(self.vertex_weight) != vertex_count
+                len(self.bones.vertexes) != self.mesh.vertexes
+                or len(self.bones.weights) != self.mesh.vertexes
             ):
                 return False
 
             # Check bone indices are valid
-            if self.vertex_bone:
-                max_bone_index = max(max(bones) for bones in self.vertex_bone)
-                if max_bone_index >= len(self.bone_name):
+            if self.bones.vertexes:
+                max_bone_index = max(max(bones) for bones in self.bones.vertexes)
+                if max_bone_index >= len(self.bones.names):
                     return False
 
         return True
@@ -137,71 +147,38 @@ class BaseMeshParser(ABC):
         # Create MeshData with unified field mapping
         mesh_data = MeshData(
             # Metadata
-            version=model.get("mesh_version", 0),
+            version=model["version"],
+            type=model["type"],
             # Core mesh data
-            position=model.get("mesh", []).get("position", []),
-            normal=model.get("mesh", []).get("normal", []),
-            face=model.get("mesh", []).get("face", []),
-            uv=model.get("mesh", []).get("uv", []),
-            # Bone data
-            has_bones=model.get("has_bones", 0),
-            bone_parent=model.get("bone_parent", []),
-            bone_name=model.get("bone_name", []),
-            bone_matrix=model.get("bone_original_matrix", model.get("bone_matrix", [])),
-            bone_count=model.get("bone_count", 0),
-            # Vertex bone assignments - unify different field names
-            vertex_bone=model.get("vertex_joint", model.get("vertex_bone", [])),
-            vertex_weight=model.get(
-                "vertex_joint_weight", model.get("vertex_weight", [])
+            mesh=Mesh(
+                vertexes=model["mesh"]["data"][0],
+                faces=model["mesh"]["data"][1],
+                position=model["mesh"]["position"],
+                normal=model["mesh"]["normal"],
+                face=model["mesh"]["face"],
+                uv=model["mesh"]["uv"],
             ),
-            # Mesh metadata
-            mesh=model.get("mesh", []),
-            mesh_version=model.get("mesh_version", 0),
-            # Additional fields if present
-            material_id=model.get("material_id", []),
-            vertex_color=model.get("vertex_color", []),
+            # Bone data
+            bones=Bones(
+                has_bones=model["bones"]["has_bones"],
+                parent_connections=model["bones"]["parent_connections"],
+                names=model["bones"]["names"],
+                matrix=model["bones"]["matrix"],
+                count=model["bones"]["count"],
+                vertexes=model["bones"]["vertexes"],
+                weights=model["bones"]["weights"],
+            )
+            if model["bones"]["has_bones"] == 1 or model["bones"]["has_bones"] == 4
+            else Bones(
+                has_bones=model["bones"]["has_bones"],
+                parent_connections=[],
+                names=[],
+                matrix=[],
+                count=0,
+                vertexes=[],
+                weights=[],
+            ),
         )
-
-        # Ensure consistent bone naming
-        if mesh_data.bone_name:
-            mesh_data.bone_name = [
-                name.replace("\0", "").replace(" ", "_").strip()
-                for name in mesh_data.bone_name
-            ]
-
-        # Ensure consistent data types for vertex counts
-        if mesh_data.position:
-            vertex_count = len(mesh_data.position)
-
-            # Pad missing normals with zero vectors
-            if len(mesh_data.normal) < vertex_count:
-                mesh_data.normal.extend(
-                    [(0.0, 0.0, 0.0)] * (vertex_count - len(mesh_data.normal))
-                )
-
-            # Pad missing UV coordinates with zero vectors
-            if len(mesh_data.uv) < vertex_count:
-                mesh_data.uv.extend([(0.0, 0.0)] * (vertex_count - len(mesh_data.uv)))
-
-            # Pad missing bone assignments
-            if (
-                mesh_data.has_bone_structure
-                and len(mesh_data.vertex_bone) < vertex_count
-            ):
-                mesh_data.vertex_bone.extend(
-                    [[0, 0, 0, 0]] * (vertex_count - len(mesh_data.vertex_bone))
-                )
-
-            # Pad missing bone weights
-            if (
-                mesh_data.has_bone_structure
-                and len(mesh_data.vertex_weight) < vertex_count
-            ):
-                mesh_data.vertex_weight.extend(
-                    [[1.0, 0.0, 0.0, 0.0]]
-                    * (vertex_count - len(mesh_data.vertex_weight))
-                )
-
         return mesh_data
 
     def _validate_vertex_count(self, vertex_count: int) -> None:

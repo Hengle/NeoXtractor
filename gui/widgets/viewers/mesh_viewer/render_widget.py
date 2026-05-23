@@ -278,6 +278,7 @@ class MeshRenderWidget(ManagedRhiWidget, CameraController):
         if self._mesh_renderer.mesh_data is not None:
             mesh_info = [
                 ("Version", self._mesh_renderer.mesh_data.raw_data.version),
+                ("Type", self._mesh_renderer.mesh_data.raw_data.type),
                 ("Bones", self._mesh_renderer.mesh_data.bone_count),
                 ("Vertices", self._mesh_renderer.mesh_data.vertex_count),
                 ("Triangles", self._mesh_renderer.mesh_data.triangle_count),

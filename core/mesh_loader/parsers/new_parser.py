@@ -135,68 +135,72 @@ class MeshParser0(BaseMeshParser):
     def _parse_mesh_testing(self, f: BinaryIO) -> dict[str, Iterable[Any] | int]:
         model: dict[str, Iterable[Any] | int] = {}
         model["mesh"] = {}
+        model["bones"] = {}
         model["mesh"]["extra"] = []
         model["mesh"]["multiple_offsets"] = []
-        parent_nodes: list[int] = []
         MAX_PARENT_NODE = 255
 
-        bone_int_reader = read_uint8
-        vertex_float_reader = read_float
-        vertex_int_reader = read_uint8
+        bone_parent_read = read_uint8
+        vert_float_read = read_float
+        vert_bone_read = read_uint8
         total_uv_data = 0
         meshes_inside = 1
         meshes_inside_data = 0
-        total_uv_data = 0
 
         _magic_number = read_uint32(f)
-        model["mesh_version"] = read_uint16(f)
+        model["version"] = read_uint16(f)
         read_uint16(f)  # always_0x0500
-        model["has_bones"] = read_uint16(f)
+        model["bones"]["has_bones"] = read_uint16(f)
         read_uint16(f)  # always_0x0000
         get_logger().info(
-            f"MESH: Version {model['mesh_version']} | Bone Type: {model['has_bones']}"
+            f"MESH: Version {model['version']} | Bone Type: {model['bones']['has_bones']}"
         )
 
-        if model["has_bones"] == 1 or model["has_bones"] == 4:
-            model["bone_count"] = bone_count = read_uint16(f)
-            if model["mesh_version"] == 4 and bones_is_16(f, bone_count):
-                bone_int_reader = read_uint16
+        if model["bones"]["has_bones"] == 1 or model["bones"]["has_bones"] == 4:
+            model["bones"]["count"] = bone_count = read_uint16(f)
+            if model["version"] == 4 and bones_is_16(f, bone_count):
+                bone_parent_read = read_uint16
                 MAX_PARENT_NODE = 65535
             self._validate_bone_count(bone_count)
 
+            model["bones"]["parent_connections"] = []
             for _ in range(bone_count):
-                parent_node: int = bone_int_reader(f)
-                if parent_node == MAX_PARENT_NODE:
-                    parent_node = -1
-                parent_nodes.append(parent_node)
-            model["bone_parent"] = parent_nodes
+                parent_node: int = bone_parent_read(f)
+                model["bones"]["parent_connections"].append(
+                    parent_node
+                ) if parent_node != MAX_PARENT_NODE else model["bones"][
+                    "parent_connections"
+                ].append(-1)
 
-            bone_names: list[str] = []
+            model["bones"]["names"] = []
             for _ in range(bone_count):
                 bone_name = f.read(32)
-                bone_name = bone_name.decode().replace("\0", "").replace(" ", "_")
-                bone_names.append(bone_name)
-            model["bone_name"] = bone_names
+                model["bones"]["names"].append(
+                    bone_name.decode().replace("\0", "").replace(" ", "_")
+                )
 
             bone_extra_info = read_uint8(f)
             if bone_extra_info:
                 f.seek(28 * bone_count, 1)
 
-            model["bone_matrix"] = []
+            model["bones"]["matrix"] = []
             for _ in range(bone_count):
                 matrix = [read_float(f) for _ in range(16)]
                 matrix = np.array(matrix).reshape(4, 4)
-                model["bone_matrix"].append(matrix)
+                model["bones"]["matrix"].append(matrix)
 
             # creates a new "dummy_root" as a default bone for the rest of the starters to link to
-            if parent_nodes.count(-1) > 1:
-                num = len(model["bone_parent"])
-                model["bone_parent"] = list(
-                    map(lambda x: num if x == -1 else x, model["bone_parent"])
+            if model["bones"]["parent_connections"].count(-1) > 1:
+                num = len(model["bones"]["parent_connections"])
+                model["bones"]["parent_connections"] = list(
+                    map(
+                        lambda x: num if x == -1 else x,
+                        model["bones"]["parent_connections"],
+                    )
                 )
-                model["bone_parent"].append(-1)
-                model["bone_name"].append("dummy_root")
-                model["bone_matrix"].append(np.identity(4))
+                model["bones"]["parent_connections"].append(-1)
+                model["bones"]["names"].append("dummy_root")
+                model["bones"]["matrix"].append(np.identity(4))
 
             flag1 = read_uint8(f)
             if flag1 != 0:
@@ -265,55 +269,54 @@ class MeshParser0(BaseMeshParser):
             face_count,
             meshes_inside_data,
             total_uv_data,
-            model["has_bones"],
-            model["mesh_version"],
+            model["bones"]["has_bones"],
+            model["version"],
         )
+
         get_logger().info(
             f"MESH: VERTS: {vertex_count} | FACES: {face_count} | UV_DATA: {total_uv_data} | UV_LAYERS: {'No' if uv_layers == 0 else uv_layers} | TYPE: {type}"
         )
 
         if meshes_inside_data != 0:
             get_logger().warning(
-                f"MESH: This is a multiple mesh type ({meshes_inside} total) - COMPATIBILITY NOT GURANTEED"
+                f"MESH: This is a multiple mesh type ({meshes_inside} splits ~ {meshes_inside_data} extra bytes) - COMPATIBILITY NOT GURANTEED"
             )
 
         if type == 100:
-            vertex_float_reader = read_half_float
+            vert_float_read = read_half_float
             get_logger().warning(
-                "MESH: This mesh has a non-standard UV count - UV, vertex_bone and vertex_weights will be missing!"
+                "MESH: This mesh has a non-standard UV count - UV data, bone vertexes and bone weights will be missing!"
             )
         elif type == -1:
             raise NotImplementedError("MESH: This mesh type is not yet implemented")
 
         elif type == 4 or type == 5:
-            vertex_float_reader = read_half_float
+            vert_float_read = read_half_float
         elif type == 5 or type == 2 or type == 3:
-            vertex_int_reader = read_uint16
+            vert_bone_read = read_uint16
 
-        model["mesh"]["data"] = []
-        model["mesh"]["data"].append(
-            (
-                vertex_count,
-                face_count,
-                uv_layers,
-            )
+        model["type"] = type
+        model["mesh"]["data"] = (
+            vertex_count,
+            face_count,
+            uv_layers,
         )
 
         model["mesh"]["position"] = []
         # vertex position
         for _ in range(vertex_count):
-            x = vertex_float_reader(f)
-            y = vertex_float_reader(f)
-            z = vertex_float_reader(f)
+            x = vert_float_read(f)
+            y = vert_float_read(f)
+            z = vert_float_read(f)
             model["mesh"]["position"].append((x, y, z))
 
         model["mesh"]["normal"] = []
 
         # vertex normal
         for _ in range(vertex_count):
-            x = vertex_float_reader(f)
-            y = vertex_float_reader(f)
-            z = vertex_float_reader(f)
+            x = vert_float_read(f)
+            y = vert_float_read(f)
+            z = vert_float_read(f)
             model["mesh"]["normal"].append((x, y, z))
 
         _flag = read_uint16(f)
@@ -335,22 +338,33 @@ class MeshParser0(BaseMeshParser):
 
         model["mesh"]["uv"] = []
         if uv_layers and type != 100:
-            for _ in range(vertex_count):
+            for _ in range(total_uv_data):
                 model["mesh"]["uv"].append((read_float(f), read_float(f)))
         else:
-            for _ in range(total_uv_data):
+            for _ in range(vertex_count):
                 model["mesh"]["uv"].append((0.0, 0.0))
 
-        if model["has_bones"] == 1 or model["has_bones"] == 4 and type != 100:
-            model["vertex_bone"] = []
+        if (
+            model["bones"]["has_bones"] == 1
+            or model["bones"]["has_bones"] == 4
+            and type != 100
+        ):
+            model["bones"]["vertexes"] = []
             for _ in range(vertex_count):
-                model["vertex_bone"].append([vertex_int_reader(f) for _ in range(4)])
+                model["bones"]["vertexes"].append([vert_bone_read(f) for _ in range(4)])
 
-            model["vertex_weight"] = []
+            model["bones"]["weights"] = []
             for _ in range(vertex_count):
-                model["vertex_weight"].append([read_float(f) for _ in range(4)])
-        elif model["has_bones"] == 1 or model["has_bones"] == 4 and type == 100:
-            model["vertex_bone"] = []
-            model["vertex_weight"] = []
+                model["bones"]["weights"].append([read_float(f) for _ in range(4)])
+        elif (
+            model["bones"]["has_bones"] == 1
+            or model["bones"]["has_bones"] == 4
+            and type == 100
+        ):
+            model["bones"]["vertexes"] = []
+            model["bones"]["weights"] = []
+            for _ in range(vertex_count):
+                model["bones"]["vertexes"].append((0, 0, 0, 0))
+                model["bones"]["weights"].append((0.0, 0.0, 0.0, 0.0))
 
         return model

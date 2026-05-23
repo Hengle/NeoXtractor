@@ -39,16 +39,16 @@ class ProcessedMeshData:
         self.raw_data = raw_data
 
         # Process mesh data
-        pos = np.array(raw_data.position)
+        pos = np.array(raw_data.mesh.position)
         pos[:, 0] = -pos[:, 0]  # Flip X-axis
-        norm = np.array(raw_data.normal)
+        norm = np.array(raw_data.mesh.normal)
         norm[:, 0] = -norm[:, 0]  # Flip X-axis for normals as well
 
         # Combine position and normals into a single array
         self.vertices = np.hstack((pos, norm))
 
         # Reorder indices
-        self.indices = np.array(raw_data.face)[:, [1, 0, 2]]
+        self.indices = np.array(raw_data.mesh.face)[:, [1, 0, 2]]
         self.wireframe_indices = self._generate_wireframe_indices(self.indices)
 
         # Calculate normal lines
@@ -73,16 +73,16 @@ class ProcessedMeshData:
         bone_positions = []
         bone_lines = []
 
-        for i, parent in enumerate(raw_data.bone_parent):
+        for i, parent in enumerate(raw_data.bones.parent_connections):
             # Apply the flip to the bone's matrix
-            matrix = raw_data.bone_matrix[i]
+            matrix = raw_data.bones.matrix[i]
             pos = np.asarray(matrix.T)[:3, 3].copy()
             pos[0] = -pos[0]  # Flip X-axis for bone positions
             bone_positions.append(pos)
 
             # Only create a line if the bone has a parent
             if parent != -1:
-                parent_matrix = raw_data.bone_matrix[parent]
+                parent_matrix = raw_data.bones.matrix[parent]
                 parent_pos = np.asarray(parent_matrix.T)[:3, 3].copy()
                 parent_pos[0] = -parent_pos[0]
                 bone_lines.extend([pos, parent_pos])
@@ -106,12 +106,12 @@ class ProcessedMeshData:
     @property
     def vertex_count(self) -> int:
         """Returns the total number of vertices in the mesh."""
-        return len(self.raw_data.position)
+        return len(self.raw_data.mesh.position)
 
     @property
     def face_count(self) -> int:
         """Returns the total number of faces (triangles) in the mesh."""
-        return len(self.raw_data.face)
+        return len(self.raw_data.mesh.face)
 
     @property
     def triangle_count(self) -> int:
@@ -126,7 +126,7 @@ class ProcessedMeshData:
     @property
     def bone_count(self) -> int:
         """Returns the total number of bones in the mesh."""
-        return len(self.raw_data.bone_parent)
+        return len(self.raw_data.bones.parent_connections)
 
 
 class MeshRenderer:
