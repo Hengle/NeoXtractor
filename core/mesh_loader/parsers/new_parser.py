@@ -154,7 +154,7 @@ def bones_is_16(f: BinaryIO, bones: int) -> bool:
     # # If none of these conditions are met, its 8 bits because I jumped to the middle and its not bone name data
     f.seek(ret, 0)
 
-    return count != 32
+    return count != 31
 
 
 def dequant(value: int, min_float: float, max_float: float) -> float:
