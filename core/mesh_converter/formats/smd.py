@@ -21,31 +21,31 @@ def convert(mesh: MeshData, flip_uv=False) -> bytes:
     smd_lines.append("version 1\n")
 
     # Bone Structure - Write nodes as in a static SMD
-    if mesh.has_bone_structure:
+    if mesh.has_bones:
         smd_lines.append("nodes\n")
         parent_child_dict = {}
-        for i, parent in enumerate(mesh.bone_parent):
+        for i, parent in enumerate(mesh.bones.parents):
             if parent not in parent_child_dict:
                 parent_child_dict[parent] = []
             parent_child_dict[parent].append(i)
 
         # Recursive function to build bone hierarchy
         def write_bone_hierarchy(index, parent_index, lines):
-            bone_name = mesh.bone_name[index]
+            bone_name = mesh.bones.names[index]
             lines.append(f'{index} "{bone_name}" {parent_index}\n')
             if index in parent_child_dict:
                 for child in parent_child_dict[index]:
                     write_bone_hierarchy(child, index, lines)
 
         # Start with root bones
-        root_index = mesh.bone_parent.index(-1)
+        root_index = mesh.bones.parents.index(-1)
         write_bone_hierarchy(root_index, -1, smd_lines)
         smd_lines.append("end\n")
 
         # Skeleton - Static, only the initial frame at time 0
         smd_lines.append("skeleton\n")
         smd_lines.append("time 0\n")
-        for i, matrix in enumerate(mesh.bone_matrix):
+        for i, matrix in enumerate(mesh.bones.matrix):
             # Extract translation from transformation matrix
             x, y, z = matrix[0, 3], matrix[1, 3], matrix[2, 3]
             # Extract rotation angles (simplified - assumes no complex rotations)
@@ -67,23 +67,23 @@ def convert(mesh: MeshData, flip_uv=False) -> bytes:
 
     # Mesh Data - Vertices, Normals, UVs, and Faces
     smd_lines.append("triangles\n")
-    for face_idx, (v1, v2, v3) in enumerate(mesh.face):
+    for face_idx, (v1, v2, v3) in enumerate(mesh.mesh.face):
         material_name = f"material_{face_idx // 100}"  # Group faces by material
         smd_lines.append(f"{material_name}\n")
 
         for vertex_index in [v1, v2, v3]:
-            pos = mesh.position[vertex_index]
-            norm = mesh.normal[vertex_index] if mesh.has_normals else (0.0, 0.0, 1.0)
-            uv = mesh.uv[vertex_index] if mesh.has_uvs else (0.0, 0.0)
+            pos = mesh.mesh.position[vertex_index]
+            norm = mesh.mesh.normal[vertex_index]
+            uv = mesh.mesh.uv[vertex_index]
 
             # Flip UV if specified
             if flip_uv:
                 uv = (uv[0], 1 - uv[1])
 
-            if mesh.has_bone_structure and vertex_index < len(mesh.vertex_bone):
+            if mesh.has_bones and vertex_index < len(mesh.bones.joints):
                 # Use bone weights
-                joint_indices = mesh.vertex_bone[vertex_index]
-                weights = mesh.vertex_weight[vertex_index]
+                joint_indices = mesh.bones.joints[vertex_index]
+                weights = mesh.bones.weights[vertex_index]
 
                 # Find the bone with highest weight
                 max_weight_idx = weights.index(max(weights))

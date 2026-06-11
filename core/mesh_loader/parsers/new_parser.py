@@ -6,6 +6,7 @@ import numpy as np
 from core.binary_readers import (
     read_float,
     read_half_float,
+    read_sint16,
     read_uint8,
     read_uint16,
     read_uint32,
@@ -22,9 +23,11 @@ def identify_mesh_type(
     uv_total_data: int,
     bone_type: int,
     version: int,
-) -> int:
+) -> tuple[int, int]:
     # Smallest final size calculation for vertex bones and vertex weights, 4x8u + 4xfloat (20 bytes)
+
     test = 0
+    # UV data: U, V, 2xfloat
     uv_total_data = uv_total_data * 8
 
     size = size - meshes_inside_data
@@ -38,87 +41,133 @@ def identify_mesh_type(
         case 0 | 1:
             test = size - vertex_count * 24 - face_count * 6 - uv_total_data - 2
             if not test or test == 32:
-                return 1
+                return (1, 0)
 
             test = test - vertex_count * 12
             if not test or test == 32:
-                return 1
+                return (1, 0)
 
             # vertex_bones is uint16
             test = test - vertex_count * 4
             if test > 0 and test < vertex_count - 1:
-                return 2
+                return (2, 0)
 
             # bones has extra data + vertex is uint16
             test = test - vertex_count * 4
             if test > 0 and test < vertex_count - 1:
-                return 3
+                return (3, 0)
 
             if version == 4:
+                return (-1, 0)
+
+                # Keep the rest of the code, for when we figure out how to unpack these
+
                 # No bones
                 test = size - vertex_count * 14 - face_count * 6 - (uv_total_data // 2)
                 if test >= 0 and test < vertex_count - 1:
-                    return -1
+                    return (-1, 0)
                 # Vertex is +1 because vertex_weight can be half_float
                 test = (
                     size - vertex_count * 3 - face_count * 6 - (uv_total_data // 2) - 1
                 )
                 if not test or test == 32:
-                    return -1
+                    return (-1, 0)
                 # UV data: U, V, 4 bytes each, (8 bytes total, for vertex_count and extra)
                 test = size - vertex_count * 11 - face_count * 6 - uv_total_data - 1
                 if not test:
-                    return -1
+                    return (-1, 0)
 
                 # vertex positions (4*uint16?), normals (3*half_float) 14 bytes per vertex, vertex_weights (4xhalf_float), uv (2*half_float)
                 test = (
                     size - vertex_count * 6 - face_count * 6 - uv_total_data // 2 - 32
                 )
                 if test >= 0 and test < vertex_count - 1:
-                    return -1
+                    return (-1, 0)
 
                 test = size - vertex_count * 14 - face_count * 6 - uv_total_data
                 # vertex positions are 8 bytes whole (the 3 coordinates, somehow), and normals are quantized ints (2 bytes each), 14 bytes per vertex, and 300 bytes of some bullshit data in the middle
                 if test >= 0 and test < vertex_count - 1:
-                    return -1
+                    return (-1, 0)
 
         case 3 | 4:
             test = size - vertex_count * 12 - face_count * 6 - uv_total_data - 2
             if not test or test == 32:
-                return 4
+                return (4, 0)
 
             # vertex_bones is uint16
             test = test - vertex_count * 4
             if not test or test == 32:
-                return 5
+                return (5, 0)
 
             # _flag is 1
             test = test - vertex_count * 2
             if not test or test == 32:
-                return 4
+                return (4, 0)
 
             # vertex_bones is uint16 AND _flag is 1
             test = test - vertex_count * 4
             if not test or test == 32:
-                return 5
+                return (5, 0)
 
-            return 100
+            if version == 7:
+                # Vertex and normals are quantized, uint16
+                test = size - vertex_count * 20 - face_count * 6 - uv_total_data // 2
+                if test >= 0 and test < vertex_count - 1:
+                    return (22, test)
+
+                test = test - vertex_count * 4
+                if test >= 0 and test < vertex_count - 1:
+                    return (23, test)
+
+                # Vertex and normals are quantized, uint16
+                test = size - vertex_count * 20 - face_count * 6 - uv_total_data
+                if test >= 0 and test < vertex_count - 1:
+                    return (20, test)
+
+                test = test - vertex_count * 4
+                if test >= 0 and test < vertex_count - 1:
+                    return (21, test)
+
+            return (100, 0)
 
         case _:
-            return -98
-    return -99
+            return (-98, 0)
+    return (-99, 0)
 
 
 # Try to identify if the following data is uint8 or uint16, if its 16 bits, return True, else False
 def bones_is_16(f: BinaryIO, bones: int) -> bool:
-    test = f.read(bones * 2)
-    f.seek(-bones * 2, 1)
-    return b"\x00\x00\x00\x00" not in test
+    ret = f.tell()
+    f.seek(bones, 1)
+    count = 0
+    while f.read(1) != b"\x00":
+        count += 1
+    if count == 0 or count > 32:
+        # If im in the middle of the data and I'm on a 00 byte or I read more than 32 bytes of data, its 16 bits
+        f.seek(ret, 0)
+        return True
+    while f.read(1) == b"\x00":
+        count += 1
+
+    # If after jumping the bone count, I read and the sum between the non-zero bytes and the zero bytes is 32, its 16 bits
+    # (since bones names are stored in 32 bit chunks)
+    # # If none of these conditions are met, its 8 bits because I jumped to the middle and its not bone name data
+    f.seek(ret, 0)
+
+    return count != 32
 
 
 def dequant(value: int, min_float: float, max_float: float) -> float:
     normalized = (value + 32768) / 65535.0
     return min_float + (normalized * (max_float - min_float))
+
+
+def read_dequant_16(f):
+    return read_sint16(f)
+
+
+def read_normal_16(f, min_float: float, max_float: float) -> float:
+    return dequant(read_sint16(f), min_float, max_float)
 
 
 class MeshParser0(BaseMeshParser):
@@ -251,8 +300,6 @@ class MeshParser0(BaseMeshParser):
 
         for vertex, _, uv, _ in model["mesh"]["extra"]:
             total_uv_data += vertex * uv
-            # if add_again and uv == 1:
-            #    total_uv_data += vertex
 
         # Temporary handling, remove if its problematic:
         total_uv_data = (
@@ -263,7 +310,7 @@ class MeshParser0(BaseMeshParser):
 
         mesh_data_size = ending_address - f.tell()
 
-        type = identify_mesh_type(
+        type, bytes_to_skip = identify_mesh_type(
             mesh_data_size,
             vertex_count,
             face_count,
@@ -285,7 +332,7 @@ class MeshParser0(BaseMeshParser):
         if type == 100:
             vert_float_read = read_half_float
             get_logger().warning(
-                "MESH: This mesh has a non-standard UV count - UV data, bone vertexes and bone weights will be missing!"
+                "MESH: This mesh has a non-standard UV count - UV data, bone joints and bone weights will be missing!"
             )
         elif type == -1:
             raise NotImplementedError("MESH: This mesh type is not yet implemented")
@@ -294,6 +341,9 @@ class MeshParser0(BaseMeshParser):
             vert_float_read = read_half_float
         elif type == 5 or type == 2 or type == 3:
             vert_bone_read = read_uint16
+        elif type == 20 or type == 21 or type == 22 or type == 23:
+            f.seek(bytes_to_skip, 1)
+            vert_float_read = read_dequant_16
 
         model["type"] = type
         model["mesh"]["data"] = (
@@ -304,25 +354,41 @@ class MeshParser0(BaseMeshParser):
 
         model["mesh"]["position"] = []
         # vertex position
-        for _ in range(vertex_count):
-            x = vert_float_read(f)
-            y = vert_float_read(f)
-            z = vert_float_read(f)
-            model["mesh"]["position"].append((x, y, z))
+        if type == 20 or type == 21 or type == 22 or type == 23:
+            for _ in range(vertex_count):
+                x = dequant(read_sint16(f), -3800.0, 3800.0)
+                y = dequant(read_sint16(f), -3500.0, 3500.0)
+                z = dequant(read_sint16(f), -6000.0, 6000.0)
+                model["mesh"]["position"].append((x, y, z))
+        else:
+            for _ in range(vertex_count):
+                x = vert_float_read(f)
+                y = vert_float_read(f)
+                z = vert_float_read(f)
+                model["mesh"]["position"].append((x, y, z))
 
         model["mesh"]["normal"] = []
 
         # vertex normal
-        for _ in range(vertex_count):
-            x = vert_float_read(f)
-            y = vert_float_read(f)
-            z = vert_float_read(f)
-            model["mesh"]["normal"].append((x, y, z))
+        if type == 20 or type == 21 or type == 22 or type == 23:
+            for _ in range(vertex_count):
+                x = read_normal_16(f, -1.0, 1.0)
+                y = read_normal_16(f, -1.0, 1.0)
+                z = read_normal_16(f, -1.0, 1.0)
+                model["mesh"]["normal"].append((x, y, z))
+        else:
+            for _ in range(vertex_count):
+                x = vert_float_read(f)
+                y = vert_float_read(f)
+                z = vert_float_read(f)
+                model["mesh"]["normal"].append((x, y, z))
 
         _flag = read_uint16(f)
 
         if _flag == 1 and (type == 4 or type == 5 or type == 7 or type == 100):
             f.seek(vertex_count * 6, 1)
+        elif type == 20 or type == 21 or type == 22 or type == 23:
+            f.seek(vertex_count * 8 - 2, 1)
         elif _flag == 1:
             f.seek(vertex_count * 12, 1)
         elif _flag > 1:
@@ -335,6 +401,12 @@ class MeshParser0(BaseMeshParser):
             v2 = read_uint16(f)
             v3 = read_uint16(f)
             model["mesh"]["face"].append((v1, v2, v3))
+
+        if type == 21:
+            f.seek(vertex_count * 4, 1)
+
+        elif type == 23:
+            total_uv_data = total_uv_data // 2
 
         model["mesh"]["uv"] = []
         if uv_layers and type != 100:
@@ -349,9 +421,9 @@ class MeshParser0(BaseMeshParser):
             or model["bones"]["has_bones"] == 4
             and type != 100
         ):
-            model["bones"]["vertexes"] = []
+            model["bones"]["joints"] = []
             for _ in range(vertex_count):
-                model["bones"]["vertexes"].append([vert_bone_read(f) for _ in range(4)])
+                model["bones"]["joints"].append([vert_bone_read(f) for _ in range(4)])
 
             model["bones"]["weights"] = []
             for _ in range(vertex_count):
@@ -361,10 +433,25 @@ class MeshParser0(BaseMeshParser):
             or model["bones"]["has_bones"] == 4
             and type == 100
         ):
-            model["bones"]["vertexes"] = []
+            model["bones"]["joints"] = []
             model["bones"]["weights"] = []
             for _ in range(vertex_count):
-                model["bones"]["vertexes"].append((0, 0, 0, 0))
+                model["bones"]["joints"].append((0, 0, 0, 0))
                 model["bones"]["weights"].append((0.0, 0.0, 0.0, 0.0))
+
+        if type == 20 or type == 21:
+            x, y, z = zip(*model["mesh"]["position"])
+            minx = min(x)
+            miny = min(y)
+            minz = min(z)
+            maxx = max(x)
+            maxy = max(y)
+            maxz = max(z)
+            for i in range(vertex_count):
+                model["mesh"]["position"][i] = (
+                    dequant(model["mesh"]["position"][i][0], minx, maxx),
+                    dequant(model["mesh"]["position"][i][1], miny, maxy),
+                    dequant(model["mesh"]["position"][i][2], minz, maxz),
+                )
 
         return model

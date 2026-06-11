@@ -54,7 +54,7 @@ class ProcessedMeshData:
         # Calculate normal lines
         normal_line_vertices = np.empty((pos.shape[0] * 2, 3), dtype="f4")
         normal_line_vertices[0::2] = pos
-        normal_line_vertices[1::2] = pos + norm * 0.008
+        normal_line_vertices[1::2] = pos + norm * 0.1
 
         self.normal_lines = normal_line_vertices
 
@@ -73,7 +73,7 @@ class ProcessedMeshData:
         bone_positions = []
         bone_lines = []
 
-        for i, parent in enumerate(raw_data.bones.parent_connections):
+        for i, parent in enumerate(raw_data.bones.parents):
             # Apply the flip to the bone's matrix
             matrix = raw_data.bones.matrix[i]
             pos = np.asarray(matrix.T)[:3, 3].copy()
@@ -126,7 +126,7 @@ class ProcessedMeshData:
     @property
     def bone_count(self) -> int:
         """Returns the total number of bones in the mesh."""
-        return len(self.raw_data.bones.parent_connections)
+        return len(self.raw_data.bones.parents)
 
 
 class MeshRenderer:

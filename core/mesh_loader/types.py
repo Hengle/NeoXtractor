@@ -37,14 +37,18 @@ class Bones:
 
     # Bone/skeleton data
     has_bones: int = 0
-    parent_connections: list[int] = field(default_factory=list[int])
+    parents: list[int] = field(default_factory=list[int])
     names: list[str] = field(default_factory=list[str])
     matrix: list[np.ndarray] = field(default_factory=list[np.ndarray])
     count: int = 0
 
     # Vertex bone assignments
-    vertexes: list[list[int]] = field(default_factory=list[list[int]])
-    weights: list[list[float]] = field(default_factory=list[list[float]])
+    joints: list[tuple[int, int, int, int]] = field(
+        default_factory=list[tuple[int, int, int, int]]
+    )
+    weights: list[tuple[float, float, float, float]] = field(
+        default_factory=list[tuple[float, float, float, float]]
+    )
 
 
 @dataclass
@@ -75,7 +79,12 @@ class MeshData:
         return self.mesh.faces
 
     @property
-    def has_bone_structure(self) -> bool:
+    def uv_count(self) -> int:
+        """Get the number of UV coordinates in the mesh."""
+        return len(self.mesh.uv)
+
+    @property
+    def has_bones(self) -> bool:
         """Check if the mesh has bone data."""
         return self.bones.has_bones == 1 or self.bones.has_bones == 4
 
@@ -101,14 +110,14 @@ class MeshData:
         # Check bone data consistency
         if self.bones.has_bones:
             if (
-                len(self.bones.vertexes) != self.mesh.vertexes
+                len(self.bones.joints) != self.mesh.vertexes
                 or len(self.bones.weights) != self.mesh.vertexes
             ):
                 return False
 
             # Check bone indices are valid
-            if self.bones.vertexes:
-                max_bone_index = max(max(bones) for bones in self.bones.vertexes)
+            if self.bones.joints:
+                max_bone_index = max(max(bones) for bones in self.bones.joints)
                 if max_bone_index >= len(self.bones.names):
                     return False
 
@@ -161,21 +170,21 @@ class BaseMeshParser(ABC):
             # Bone data
             bones=Bones(
                 has_bones=model["bones"]["has_bones"],
-                parent_connections=model["bones"]["parent_connections"],
+                parents=model["bones"]["parent_connections"],
                 names=model["bones"]["names"],
                 matrix=model["bones"]["matrix"],
                 count=model["bones"]["count"],
-                vertexes=model["bones"]["vertexes"],
+                joints=model["bones"]["joints"],
                 weights=model["bones"]["weights"],
             )
             if model["bones"]["has_bones"] == 1 or model["bones"]["has_bones"] == 4
             else Bones(
                 has_bones=model["bones"]["has_bones"],
-                parent_connections=[],
+                parents=[],
                 names=[],
                 matrix=[],
                 count=0,
-                vertexes=[],
+                joints=[],
                 weights=[],
             ),
         )

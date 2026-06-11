@@ -28,26 +28,26 @@ def convert(mesh: MeshData) -> bytes:
     pmx_model.comment = "Created by NeoXtractor"
 
     # Build bone hierarchy if bones exist
-    if mesh.has_bone_structure:
+    if mesh.has_bones:
         parent_child_dict = {}
         old2new = {}
         index_pool = [-1]
         bone_pool: list[pmx.Bone] = []
 
         # Build parent-child relationships
-        for i, p in enumerate(mesh.bone_parent):
+        for i, p in enumerate(mesh.bones.parents):
             if p not in parent_child_dict:
                 parent_child_dict[p] = []
             parent_child_dict[p].append(i)
 
         def build_joint(index, parent_index):
-            matrix = mesh.bone_matrix[index]
+            matrix = mesh.bones.matrix[index]
             # Extract translation from matrix for PMX
             x, y, z = matrix[0, 3], matrix[1, 3], matrix[2, 3]
             bone_pool.append(
                 pmx.Bone(
-                    name=mesh.bone_name[index],
-                    english_name=mesh.bone_name[index],
+                    name=mesh.bones.names[index],
+                    english_name=mesh.bones.names[index],
                     position=common.Vector3(x, y, z),
                     parent_index=parent_index,
                     layer=0,
@@ -69,13 +69,16 @@ def convert(mesh: MeshData) -> bytes:
 
         # Find root bone and build hierarchy
         try:
-            root_index = mesh.bone_parent.index(-1)
+            root_index = mesh.bones.parents.index(-1)
             deep_first_search(root_index, index_pool, -1)
         except ValueError:
             # No root bone found, create default structure
-            for i in range(len(mesh.bone_name)):
+            for i in range(len(mesh.bones.names)):
                 old2new[i] = i
-                build_joint(i, mesh.bone_parent[i] if mesh.bone_parent[i] != -1 else -1)
+                build_joint(
+                    i,
+                    mesh.bones.parents[i] if mesh.bones.parents[i] != -1 else -1,
+                )
 
         pmx_model.bones = bone_pool
     else:
@@ -94,15 +97,15 @@ def convert(mesh: MeshData) -> bytes:
         pmx_model.bones = [root_bone]
         old2new = {0: 0}
 
-    for i, position in enumerate(mesh.position):
+    for i, position in enumerate(mesh.mesh.position):
         x, y, z = position
-        nx, ny, nz = mesh.normal[i] if mesh.has_normals else (0.0, 0.0, 1.0)
-        u, v = mesh.uv[i] if mesh.has_uvs else (0.0, 0.0)
+        nx, ny, nz = mesh.mesh.normal[i]
+        u, v = mesh.mesh.uv[i]
 
-        if mesh.has_bone_structure and i < len(mesh.vertex_bone):
+        if mesh.has_bones and i < len(mesh.bones.joints):
             # Map old bone indices to new ones
             vertex_joint_index = []
-            for joint_idx in mesh.vertex_bone[i]:
+            for joint_idx in mesh.bones.joints[i]:
                 if joint_idx in old2new:
                     vertex_joint_index.append(old2new[joint_idx])
                 else:
@@ -114,8 +117,8 @@ def convert(mesh: MeshData) -> bytes:
             vertex_joint_index = vertex_joint_index[:4]
 
             vertex_weights = (
-                mesh.vertex_weight[i]
-                if i < len(mesh.vertex_weight)
+                mesh.bones.weights[i]
+                if i < len(mesh.bones.weights)
                 else [1.0, 0.0, 0.0, 0.0]
             )
             while len(vertex_weights) < 4:
@@ -141,7 +144,7 @@ def convert(mesh: MeshData) -> bytes:
         pmx_model.vertices.append(vertex)
 
     # Add faces
-    for face in mesh.face:
+    for face in mesh.mesh.face:
         pmx_model.indices.extend(face)
 
     # Default single material
@@ -162,7 +165,7 @@ def convert(mesh: MeshData) -> bytes:
         toon_sharing_flag=1,
         toon_texture_index=0,
         comment="Auto-Generated Material",
-        vertex_count=len(mesh.face) * 3,
+        vertex_count=len(mesh.mesh.face) * 3,
     )
     pmx_model.materials.append(material)
 
